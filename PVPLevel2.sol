@@ -48,15 +48,10 @@ interface gold {
 }
 
 contract PVPLevel2 {
-    // rarity constant rm = rarity(0xce761D788DF608BD21bdd59d6f4B54b2e27F25Bb);
-    // attributes constant _attr =
-    //     attributes(0xB5F5AF1087A8DA62A23b08C00C6ec9af21F397a1);
-    // gold constant gld = gold(0x2069B76Afe6b734Fb65D1d099E7ec64ee9CC76B2);
-
-    rarity constant rm = rarity(0xd9145CCE52D386f254917e481eB44e9943F39138);
+    rarity constant rm = rarity(0xce761D788DF608BD21bdd59d6f4B54b2e27F25Bb);
     attributes constant _attr =
-        attributes(0xf8e81D47203A594245E36C48e151709F0C19fBe8);
-    gold constant gld = gold(0xd8b934580fcE35a11B58C6D73aDeE468a2833fa8);
+        attributes(0xB5F5AF1087A8DA62A23b08C00C6ec9af21F397a1);
+    gold constant gld = gold(0x2069B76Afe6b734Fb65D1d099E7ec64ee9CC76B2);
 
     uint256 constant REWARD = 50e18;
     uint256 constant LIMIT = 3600;
