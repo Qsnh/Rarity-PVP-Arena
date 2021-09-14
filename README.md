@@ -1,5 +1,5 @@
 
-# Rarity PVP-Arean
+# Rarity PVP-Arena
 
 ## PVP-Level2
 
