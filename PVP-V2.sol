@@ -22,8 +22,6 @@ interface rarity {
 }
 
 interface attributes {
-    function character_created(uint256) external view returns (bool);
-
     function ability_scores(uint256)
         external
         view
@@ -53,11 +51,11 @@ contract PVPLevel2 {
         attributes(0xB5F5AF1087A8DA62A23b08C00C6ec9af21F397a1);
     gold constant gld = gold(0x2069B76Afe6b734Fb65D1d099E7ec64ee9CC76B2);
 
+    uint256 constant BOSSID = 2451697;
+    uint256 constant FEE = 10e18;
     uint256 constant REWARD = 50e18;
-    uint256 constant LIMIT = 3600;
     uint256 constant LEVEL = 2;
-
-    event PK(uint256 _summoner, uint256 _opSummoner, bool _isWin);
+    uint256 constant TOTAL = 100;
 
     struct ability_score {
         uint256 id;
@@ -71,66 +69,105 @@ contract PVPLevel2 {
     }
 
     mapping(uint256 => ability_score) summonerAbility;
-    mapping(uint256 => uint256) summonerIndex;
-    mapping(uint256 => uint256) adLog;
 
-    uint256 public total;
+    uint256[100] tables;
 
-    function play(uint256 _summoner)
-        external
-        returns (
-            uint256,
-            uint256,
-            bool
-        )
-    {
-        require(_isOwner(_summoner), "not owner");
-        require(_isApproved(_summoner), "unapprove");
-        require(summonerAbility[_summoner].id > 0, "not created");
-        require(gld.balanceOf(_summoner) >= REWARD, "insufficient balance");
-        require(block.timestamp >= adLog[_summoner], "lock");
+    event PK(uint256 _s1, uint256 _s2, bool _isWin);
 
-        uint256 _randomNum = random(toString(block.timestamp)) % total;
-        if (_randomNum == 0) {
-            _randomNum = 1;
+    function status() public view returns (uint256[100] memory _status) {
+        for (uint256 i = 0; i < TOTAL; i++) {
+            _status[i] = tables[i] > 0 ? 1 : 0;
         }
+    }
 
-        uint256 _opSummoner = summonerIndex[_randomNum];
+    function challenge(uint256 _index, uint256 _opSummoner) external {
+        require(_index >= 0 && _index < TOTAL, "_index error");
+        uint256 _summoner = tables[_index];
 
-        require(_opSummoner != _summoner, "self");
-
-        require(_isApproved(_opSummoner), "op unapprove");
         require(
-            gld.balanceOf(_opSummoner) >= REWARD,
-            "op insufficient balance"
+            _summoner > 0 && _opSummoner > 0 && _opSummoner != _summoner,
+            "summoner error"
         );
 
-        bool _isWin = scout(_summoner, _opSummoner);
+        require(_isOwner(_opSummoner), "no permission");
+        require(_isApproved(_opSummoner), "unapprove");
+        require(
+            gld.balanceOf(_opSummoner) >= REWARD + FEE,
+            "Insufficient balance"
+        );
 
+        uint256 _level = rm.level(_opSummoner);
+        require(_level == LEVEL, "must level 2");
+        (
+            uint32 _str,
+            uint32 _dex,
+            uint32 _const,
+            uint32 _int,
+            uint32 _wis,
+            uint32 _chr
+        ) = _attr.ability_scores(_opSummoner);
+        summonerAbility[_opSummoner] = ability_score(
+            _opSummoner,
+            rm.class(_opSummoner),
+            uint256(_str),
+            uint256(_dex),
+            uint256(_const),
+            uint256(_int),
+            uint256(_wis),
+            uint256(_chr)
+        );
+
+        if (
+            _isApproved(_summoner) == false || gld.balanceOf(_summoner) < REWARD
+        ) {
+            tables[_index] = 0;
+            // reward
+            gld.transfer(BOSSID, _opSummoner, FEE);
+            return;
+        }
+
+        gld.transfer(_opSummoner, BOSSID, FEE);
+
+        bool _isWin = scout(_summoner, _opSummoner);
         if (_isWin) {
             // _summoner win
             gld.transfer(_opSummoner, _summoner, REWARD);
         } else {
+            // _opSummoner is ringmaster
+            tables[_index] = _opSummoner;
             gld.transfer(_summoner, _opSummoner, REWARD);
         }
 
-        adLog[_summoner] = block.timestamp + LIMIT;
-
         emit PK(_summoner, _opSummoner, _isWin);
-
-        return (_summoner, _opSummoner, _isWin);
     }
 
-    function join(uint256 _summoner) external {
-        require(_isOwner(_summoner), "not owner");
+    function cancel(uint256 _index) external {
+        require(_index >= 0 && _index < TOTAL, "_index error");
+        uint256 _summoner = tables[_index];
+
+        require(_isOwner(_summoner), "no permission");
+
+        tables[_index] = 0;
+    }
+
+    function to_challenger(uint256 _index, uint256 _summoner) external {
+        require(_summoner > 0, "ban summoner#0");
+        require(_index >= 0 && _index < TOTAL, "_index error");
+        require(tables[_index] == 0, "exists");
+
+        require(_isOwner(_summoner), "no permission");
         require(_isApproved(_summoner), "unapprove");
-        require(_summoner > 0, "ban 0 _summoner");
-        require(summonerAbility[_summoner].id == 0, "created");
+        require(
+            gld.balanceOf(_summoner) >= REWARD + FEE,
+            "Insufficient balance"
+        );
 
-        (, , , uint256 _level) = rm.summoner(_summoner);
-        require(_level == LEVEL, "level 2");
+        gld.transfer(_summoner, BOSSID, FEE);
 
-        require(gld.balanceOf(_summoner) >= REWARD, "insufficient balance");
+        tables[_index] = _summoner;
+
+        uint256 _level = rm.level(_summoner);
+        require(_level == LEVEL, "must level 2");
 
         (
             uint32 _str,
@@ -140,7 +177,6 @@ contract PVPLevel2 {
             uint32 _wis,
             uint32 _chr
         ) = _attr.ability_scores(_summoner);
-
         summonerAbility[_summoner] = ability_score(
             _summoner,
             rm.class(_summoner),
@@ -151,18 +187,14 @@ contract PVPLevel2 {
             uint256(_wis),
             uint256(_chr)
         );
-
-        summonerIndex[total] = _summoner;
-        total++;
     }
 
     function updateAlibity(uint256 _summoner) external {
         require(_isOwner(_summoner), "not owner");
         require(_isApproved(_summoner), "unapprove");
-        require(summonerAbility[_summoner].id > 0, "not created");
 
-        (, , , uint256 _level) = rm.summoner(_summoner);
-        require(_level == LEVEL);
+        uint256 _level = rm.level(_summoner);
+        require(_level == LEVEL, "must level 2");
 
         (
             uint32 _str,
@@ -172,20 +204,23 @@ contract PVPLevel2 {
             uint32 _wis,
             uint32 _chr
         ) = _attr.ability_scores(_summoner);
-
-        summonerAbility[_summoner].strength = uint256(_str);
-        summonerAbility[_summoner].dexterity = uint256(_dex);
-        summonerAbility[_summoner].constitution = uint256(_const);
-        summonerAbility[_summoner].intelligence = uint256(_int);
-        summonerAbility[_summoner].wisdom = uint256(_wis);
-        summonerAbility[_summoner].charisma = uint256(_chr);
+        summonerAbility[_summoner] = ability_score(
+            _summoner,
+            rm.class(_summoner),
+            uint256(_str),
+            uint256(_dex),
+            uint256(_const),
+            uint256(_int),
+            uint256(_wis),
+            uint256(_chr)
+        );
     }
 
     function scout(uint256 _s1, uint256 _s2) public view returns (bool _isWin) {
         // s1 prop
         uint256 _s1Class = rm.class(_s1);
         uint256 _s1Str = summonerAbility[_s1].strength;
-        uint256 _s1Dex = summonerAbility[_s1].dexterity;
+        int256 _s1Dex = modifier_for_attribute(summonerAbility[_s1].dexterity);
         uint256 _s1Const = summonerAbility[_s1].constitution;
         // s1Health
         int256 _s1Health = int256(
@@ -197,7 +232,7 @@ contract PVPLevel2 {
         // s2 prop
         uint256 _s2Class = rm.class(_s2);
         uint256 _s2Str = summonerAbility[_s2].strength;
-        uint256 _s2Dex = summonerAbility[_s2].dexterity;
+        int256 _s2Dex = modifier_for_attribute(summonerAbility[_s2].dexterity);
         uint256 _s2Const = summonerAbility[_s2].constitution;
         // s2Health
         int256 _s2Health = int256(
@@ -302,28 +337,5 @@ contract PVPLevel2 {
 
     function _isOwner(uint256 _summoner) internal view returns (bool) {
         return rm.ownerOf(_summoner) == msg.sender;
-    }
-
-    function random(string memory input) internal pure returns (uint256) {
-        return uint256(keccak256(abi.encodePacked(input)));
-    }
-
-    function toString(uint256 value) internal pure returns (string memory) {
-        if (value == 0) {
-            return "0";
-        }
-        uint256 temp = value;
-        uint256 digits;
-        while (temp != 0) {
-            digits++;
-            temp /= 10;
-        }
-        bytes memory buffer = new bytes(digits);
-        while (value != 0) {
-            digits -= 1;
-            buffer[digits] = bytes1(uint8(48 + uint256(value % 10)));
-            value /= 10;
-        }
-        return string(buffer);
     }
 }
